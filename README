@@ -1,0 +1,23 @@
+Appcelerator Titanium Command Line Debugger (tdb)
+==================================================
+
+This is a prototype project to build a Titanium based
+command line debugger.  We're using it to test out the 
+new Titanium Developer 2 visual debugger but it could be 
+useful for command line debugging of your Titanium based
+programs.
+
+
+Right now, this is very experimental and a work in progress.
+
+
+Requirements:
+
+nodejs
+
+Usage:
+
+node tdb.js <ipaddress>
+
+
+
