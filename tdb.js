@@ -5,9 +5,11 @@
  * Please see the LICENSE included with this distribution for details.
  */
 
+var DEBUG_PORT = 9988;
 
 var sys = require('sys'),
-    net = require('net');
+    net = require('net'),
+    TiDebug = require('./TiDebug/TiDebug');
 
 
 if (process.argv.length!=3)
@@ -23,11 +25,6 @@ var connection = null;
 process.argv
 var ipaddress = process.argv[2];
 
-function SendCommand(obj)
-{
-    connection.write(JSON.stringify(obj)+"\r\n");
-}
-
 function PauseCommand(event,conn)
 {
   /*
@@ -41,66 +38,39 @@ function PauseCommand(event,conn)
   */
 }
 
-var commands = 
-{
-  'paused':PauseCommand
+// FROM DEBUGGER
+var commands = {
+  'paused': PauseCommand
 };
 
-net.createServer(function(c){
-  connection = c;
-  c.setEncoding('utf8');
-  c.addListener('connect',function() {
-    sys.debug("connected");
-  });
-  c.addListener('end',function()
-  {
-    sys.debug("disconnected");
-  });
-  c.addListener("data", function (chunk) { 
-    var input = JSON.parse(chunk);
-    sys.debug("receiving data: "+JSON.stringify(input));
-    var command = input['event'];
-    var handler = commands[command];
-    if (handler)
-    {
-      handler(input,c);
-    }
-  });
-}).listen(9988,ipaddress);
-
-sys.debug("debugger listening on 9988");
+var debug;
+net.createServer(function(stream) {
+	var nodeConn = new TiDebug.NodeConnection(stream);
+	debug = new TiDebug.Debug(nodeConn);
+	debug.addListener("connect", function() {
+		sys.debug("connected");
+		sys.print("(tdb) ");
+	});
+	debug.addListener("end", function() {
+		sys.debug("disconnected");
+		sys.print("(tdb) ");
+	});
+	debug.addListener("data", function(chunk) {
+		var input = JSON.parse(chunk);
+		sys.debug("receiving data: " + JSON.stringify(input));
+		var command = input["event"];
+		var handler = commands[command];
+		if (handler) {
+			handler(input, nodeConn);
+		}
+		sys.print("(tdb) ");
+	});
+}).listen(DEBUG_PORT, ipaddress);
+sys.debug("debugger listening on " + DEBUG_PORT);
 
 function QuitHandler(args)
 {
   process.exit();
-}
-
-function SetBreakpointHandler(args)
-{
-  var source = args[0];
-  var line = args[1];
-  sys.debug("adding breakpoint to "+source+" at line: "+line);
-  breakpoints.push({source:source,line:line});
-  SendCommand({"next":"setbreakpoint","source":source,"line":line});
-}
-
-function ListBreakpointsHandler(args)
-{
-  if (breakpoints.length == 0)
-  {
-    sys.debug("No breakpoints set");
-    return;
-  }
-  for (var c=0;c<breakpoints.length;c++)
-  {
-    sys.debug(breakpoints[c].source+" : " +breakpoints[c].line);
-  }
-}
-
-function ClearBreakpointsHandler(args)
-{
-  breakpoints = [];
-  SendCommand({"next":"clearbreakpoints"});
 }
 
 function HelpHandler(args)
@@ -113,60 +83,39 @@ function HelpHandler(args)
   }
 }
 
-function ContinueHandler(args)
-{
-  SendCommand({"next":"continue"});
-}
-
-function StepOverHandler(args)
-{
-  SendCommand({"next":"stepover"});
-}
-
-function StepInHandler(args)
-{
-  SendCommand({"next":"stepin"});
-}
-
-function StepOutHandler(args)
-{
-  SendCommand({"next":"stepout"});
-}
-
-function EvaluateHandler(args)
-{
-  SendCommand({"next":"evaluate","expression":args[0]});
-}
-
 
 var handlers = 
 {
   'quit': {'handler':QuitHandler,'help':'Exit this program'},
   'exit': {'handler':QuitHandler,'ignore':true},
-  'breakpoint': {'handler':SetBreakpointHandler,'help':'Set a breakpoint: [source] [line]'},
-  'breakpoints': {'handler':ListBreakpointsHandler,'help':'List breakpoints'},
-  'clearall': {'handler':ClearBreakpointsHandler,'help':'Clear all breakpoints'},
-  'continue': {'handler':ContinueHandler,'help':'Continue from paused execution'},
-  'stepover': {'handler':StepOverHandler,'help':'Step over current execution'},
-  'stepin': {'handler':StepInHandler,'help':'Step into from current execution'},
-  'stepover': {'handler':StepOverHandler,'help':'Step over current execution'},
-  'evaluate': {'handler':EvaluateHandler,'help':'Evaluate expression in current scope'},
-  'help':{'handler':HelpHandler,'ignore':true}
+  'help':{'handler':HelpHandler,'ignore':true},
+  'breakpoint': {'handler':"setBreakpoint",'help':'Set a breakpoint: [source] [line]'},
+  'breakpoints': {'handler':"listBreakpoints",'help':'List breakpoints'},
+  'clearall': {'handler':"clearBreakpoints",'help':'Clear all breakpoints'},
+  'continue': {'handler':"continue",'help':'Continue from paused execution'},
+  'stepover': {'handler':"stepOver",'help':'Step over current execution'},
+  'stepin': {'handler':"stepIn",'help':'Step into from current execution'},
+  'stepover': {'handler':"stepOver",'help':'Step over current execution'},
+  'evaluate': {'handler':"evaluate",'help':'Evaluate expression in current scope'}
 };
 
 function processCommand(d)
 {
-  var tok = String(d).replace('\n','').replace('\r','').split(' ');
-  var cmd = tok[0];
-  if (cmd=='') return;
-  tok.shift();
-  var handler = handlers[cmd];
-  if (!handler)
-  {
-    sys.error("I don't understand: ["+cmd+"]");
-    return;
-  }
-  handler.handler(tok);
+	var tok = String(d).replace('\n','').replace('\r','').split(' ');
+	var cmd = tok.shift();
+	if (cmd=='') return;
+	var handler = handlers[cmd];
+	if (handler) {
+		if (typeof(handler.handler) === "string") {
+			debug[handler.handler].apply(debug, tok);
+		}
+		else {
+			handler.handler(tok);
+		}
+		return;
+	}
+	sys.error("I don't understand: ["+cmd+"]");
+	return;
 }
 
 var st = process.openStdin();
@@ -179,3 +128,5 @@ st.addListener("data",function(d)
 
 sys.print("Appcelerator Titanium Command Line Debugger\n");
 sys.print("(tdb) ");
+
+
