@@ -11,9 +11,12 @@ TiDebug.Debug.prototype = {
 	setConnection: function(conn) {
 		this.conn = conn;
 		var self = this;
-		conn.addListener("connect", function() { self._fireEvent("connect"); });
-		conn.addListener("end", function() { self._fireEvent("end"); });
-		conn.addListener("data", function() { self._receive.apply(self, arguments); });
+		conn.setOnConnect(function() { self._fireEvent("connect"); });
+		conn.setOnData(function() { self._receive.apply(self, arguments); });
+		conn.setOnDisconnect(function() { self._fireEvent("end"); });
+		// conn.addListener("connect", function() { self._fireEvent("connect"); });
+		// conn.addListener("end", function() { self._fireEvent("end"); });
+		// conn.addListener("data", function() { self._receive.apply(self, arguments); });
 	},
 	
 	_fireEvent: function(type, data) {
@@ -110,29 +113,79 @@ TiDebug.NodeConnection.prototype = {
 		this.connection.write(JSON.stringify(obj)+"\r\n");
 	},
 	
-	addListener: function(type, callback) {
-		this.connection.addListener(type, callback);
+	setOnConnect: function(callback) {
+		this.connection.addListener("connect", callback);
 	},
 	
-	removeListener: function(type, callback) {
-		this.connection.removeListener(type, callback);
+	setOnData: function(callback) {
+		var _buffer = "",
+		    _buffer2 = "";
+		var self = this;
+		this.connection.addListener("data", function(data) {
+			var idx;
+			_buffer += data;
+			var result;
+			while ((idx = _buffer.indexOf("\r\n")) > -1) {
+				_buffer2 += _buffer.substring(0, idx);
+				_buffer = _buffer.substring(idx + 2);
+				try {
+					result = JSON.parse(_buffer2);
+					_buffer2 = "";
+					callback(result);
+				}
+				catch (ex) {}
+			}
+		});
+	},
+	
+	setOnDisconnect: function(callback) {
+		this.connection.addListener("end", callback);
 	}
 };
 
-TiDebug.TiConnection = function(connection) {
-	this.connection = connection;
+TiDebug.TiConnection = function() {
+	var self = this;
+	var server = Titanium.Network.createTCPServerSocket(function(client) {
+		self.connection = client;
+		if (self.connectCallback) {
+			self.connectCallback();
+		}
+	});
+	server.listen(9988);
+	this._buffer = "";
 };
 TiDebug.TiConnection.prototype = {
 	send: function(obj) {
-		
+		this.connection.write(JSON.stringify(obj) + "\r\n");
 	},
 	
-	addListener: function(type, callback) {
-		
+	setOnConnect: function(callback) {
+		this.connectCallback = callback;
 	},
 	
-	removeListener: function(type, callback) {
-		
+	setOnData: function(callback) {
+		var _buffer = "",
+		    _buffer2 = "";
+		var self = this;
+		this.connection.onRead(function(data) {
+			var idx;
+			_buffer += data;
+			var result;
+			while ((idx = _buffer.indexOf("\r\n")) > -1) {
+				_buffer2 += _buffer.substring(0, idx);
+				_buffer = _buffer.substring(idx + 2);
+				try {
+					result = JSON.parse(_buffer2);
+					_buffer2 = "";
+					callback(result);
+				}
+				catch (ex) {}
+			}
+		});
+	},
+	
+	setOnDisconnect: function(callback) {
+		this.connection.onReadComplete(callback);
 	}
 };
 
@@ -145,12 +198,13 @@ TiDebug.connection = {
 		}
 	},
 	
-	addListener: function() {},
-	removeListener: function() {}
+	setOnConnect: function() {},
+	setOnData: function() {},
+	setOnDisconnect: function() {}
 };
 
 // CommonJS
-if (typeof(exports)) {
+if (typeof(exports) != "undefined") {
 	for (var item in TiDebug) {
 		exports[item] = TiDebug[item];
 	}
