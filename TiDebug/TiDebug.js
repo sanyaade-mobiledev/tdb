@@ -1,19 +1,25 @@
 var TiDebug = {}
 TiDebug.Debug = function(connection) {
+	this._listeners = {};
+	this._breakpoints = [];
+	this._connected = false;
+	
 	if (connection) {
 		this.setConnection(connection);
 	}
-	this._listeners = {};
-	this.breakpoints = [];
 	return this;
 };
 TiDebug.Debug.prototype = {
+	get isConnected() {
+		return this._connected;
+	},
+	
 	setConnection: function(conn) {
 		this.conn = conn;
 		var self = this;
-		conn.setOnConnect(function() { self._fireEvent("connect"); });
+		conn.setOnConnect(function() { self._connected = true; self._fireEvent("connect"); });
 		conn.setOnData(function() { self._receive.apply(self, arguments); });
-		conn.setOnDisconnect(function() { self._fireEvent("end"); });
+		conn.setOnDisconnect(function() { self._connected = false; self._fireEvent("end"); });
 		// conn.addListener("connect", function() { self._fireEvent("connect"); });
 		// conn.addListener("end", function() { self._fireEvent("end"); });
 		// conn.addListener("data", function() { self._receive.apply(self, arguments); });
@@ -53,7 +59,7 @@ TiDebug.Debug.prototype = {
 		return false;
 	},
 	
-	"continue": function() {
+	play: function() {
 		this.conn.send({"next":"continue"});
 	},
 	
@@ -61,29 +67,30 @@ TiDebug.Debug.prototype = {
 		this.conn.send({"next":"pause"});
 	},
 	
-	clear: function(file, line) {
+	clearBreakpoint: function(file, line) {
 		throw "Not Implemented!";
 	},
 	
-	clearAll: function() {
+	clearBreakpoints: function() {
 		this._breakpoints = [];
 		this.conn.send({"next":"clearbreakpoints"});
 	},
 	
-	breakpoint: function(file, line) {
-		sys.debug("adding breakpoint to "+file+" at line: "+line);
+	setBreakpoint: function(file, line) {
 		this._breakpoints.push({source:file,line:line});
 		this.conn.send({"next":"setbreakpoint","source":file,"line":line});
 	},
 	
 	breakpoints: function() {
-		if (this._breakpoints.length == 0) {
-			sys.debug("No breakpoints set");
-			return;
-		}
-		for (var c=0;c<this._breakpoints.length;c++) {
-			sys.debug(this._breakpoints[c].source+" : " +this._breakpoints[c].line);
-		}
+		var points = this._breakpoints.slice(0);
+		points.toString = function() {
+			var str = "";
+			for (var c=0;c<this.length;c++) {
+				str += this[c].source+" : " +this[c].line + "\n";
+			}
+			return str;
+		};
+		return points;
 	},
 	
 	stepOver: function() {
@@ -140,6 +147,10 @@ TiDebug.NodeConnection.prototype = {
 	
 	setOnDisconnect: function(callback) {
 		this.connection.addListener("end", callback);
+	},
+	
+	close: function() {
+		this.connection.end();
 	}
 };
 
@@ -150,8 +161,15 @@ TiDebug.TiConnection = function() {
 		if (self.connectCallback) {
 			self.connectCallback();
 		}
+		if (self.readCallback) {
+			self.connection.onRead(self.readCallback);
+		}
+		if (self.disconnectCallback) {
+			self.connection.onReadComplete(self.disconnectCallback);
+		}
 	});
 	server.listen(9988);
+	this.server = server;
 	this._buffer = "";
 };
 TiDebug.TiConnection.prototype = {
@@ -167,7 +185,7 @@ TiDebug.TiConnection.prototype = {
 		var _buffer = "",
 		    _buffer2 = "";
 		var self = this;
-		this.connection.onRead(function(data) {
+		this.readCallback = function(data) {
 			var idx;
 			_buffer += data;
 			var result;
@@ -181,11 +199,24 @@ TiDebug.TiConnection.prototype = {
 				}
 				catch (ex) {}
 			}
-		});
+		};
+		if (this.connection) {
+			this.connection.onRead = this.readCallback;
+		}
 	},
 	
 	setOnDisconnect: function(callback) {
-		this.connection.onReadComplete(callback);
+		this.disconnectCallback = callback;
+		if (this.connection) {
+			this.connection.onReadComplete(callback);
+		}
+	},
+	
+	close: function() {
+		if (this.connection) {
+			this.connection.close();
+		}
+		this.server.close();
 	}
 };
 
@@ -200,7 +231,8 @@ TiDebug.connection = {
 	
 	setOnConnect: function() {},
 	setOnData: function() {},
-	setOnDisconnect: function() {}
+	setOnDisconnect: function() {},
+	close: function() {}
 };
 
 // CommonJS
