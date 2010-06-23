@@ -80,9 +80,16 @@ var handlers = {
 	'breakpoints': {'handler':function() {return debug.breakpoints().toString();},'help':'List breakpoints'},
 	'clearall':    {'handler':"clearBreakpoints",'help':'Clear all breakpoints'},
 	'continue':    {'handler':"play",'help':'Continue from paused execution'},
+	
 	'stepover':    {'handler':"stepOver",'help':'Step over current execution'},
+	'next':        {'handler':"stepOver",'help':'GDB-style alias for "stepover"'},
+	
 	'stepin':      {'handler':"stepIn",'help':'Step into from current execution'},
-	'stepover':    {'handler':"stepOver",'help':'Step over current execution'},
+	'step':        {'handler':"stepIn",'help':'GDB-style alias for "stepin"'},
+	
+	'stepout':     {'handler':"stepOut",'help':'Step out of the current execution'},
+	'finish':      {'handler':"stepOut",'help':'GDB-style alias for stepout'},
+	
 	'evaluate':    {'handler':"evaluate",'help':'Evaluate expression in current scope'}
 };
 
